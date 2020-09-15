@@ -6,24 +6,45 @@ function cleanup()
 {
     # Kill the background task if it exists before removing the backup file
     kill %1 2> /dev/null
-    if [ -f $BACKUP_FILE ]; then
-        rm -f $BACKUP_FILE
+    if [ -f "$BACKUP_FILE" ]; then
+        rm -f "$BACKUP_FILE"
     fi
-    exit 2
+    exit 3
 }
 
 trap 'cleanup' SIGINT
 trap 'cleanup' SIGTERM
 
-# Read parameters from command line if there are at least one parameters.
+# Read parameters from command line if there is at least one parameter.
 # Otherwise, the environment variables are assumed to be already defined.
 if [ -n "$1" ]; then
+
+    # Empty initialise environment variable in case it was defined outside.
+    ADD_DROP_DATABASE=""
+    while [ $# gt 0 -a "${1::2}" = "--" ]; do
+        case $1 in
+            --add-drop-database)
+            ADD_DROP_DATABASE=--add-drop-database
+            ;;
+
+            *)
+            echo "Unrecognized option $1"
+            exit 2
+            ;;
+        esac
+        shift
+    done
+
     DB_NAME="$1"
     MYSQL_HOST="$2"
     MYSQL_USER="$3"
     MYSQL_PASSWD_FILE="$4"
     BACKUP_FOLDER="$5"
-    ARCHIVE_NAME="$6"
+    ARCHIVE_PREFIX="$6"
+else
+    if [ -n "ADD_DROP_DATABASE" ]; then
+        ADD_DROP_DATABASE=--add-drop-database
+    fi
 fi
 
 # Verify if arguments exist
@@ -48,8 +69,8 @@ if [ -z "$BACKUP_FOLDER" ]; then
     echo 'Error. No backup folder specified.'
     ERR=1
 fi
-if [ -z "$ARCHIVE_NAME" ]; then
-    echo 'Error. No archive name specified.'
+if [ -z "$ARCHIVE_PREFIX" ]; then
+    echo 'Error. No archive prefix specified.'
     ERR=1
 fi
 
@@ -60,25 +81,26 @@ if [ ! -d /media/backup ]; then
 fi
 
 if [ $ERR = 1 ]; then
-     exit 3
+     exit 1
 fi;
 
 echo '----------------------------------------'
 echo 'Begin Database backup.'
 
 # Create directory if it doesn't exist.
-mkdir -p /media/backup/$BACKUP_FOLDER
+mkdir -p /media/backup/$BACKUP_FOLDER &&
 # Backup the databases specified
-BACKUP_FILE=/media/backup/$BACKUP_FOLDER/${ARCHIVE_NAME}_$(date +%Y-%m-%d_%H-%M-%S).sql.bz2
-mysqldump $DB_NAME "-h$MYSQL_HOST" "-u$MYSQL_USER" "-p$(cat $MYSQL_PASSWD_FILE)" | bzip2 -cz9 > $BACKUP_FILE &
+BACKUP_FILE=/media/backup/$BACKUP_FOLDER/${ARCHIVE_PREFIX}_$(date +%Y-%m-%d_%H-%M-%S).sql.bz2 &&
+mysqldump --databases $DB_NAME $ADD_DROP_DATABASE "-h$MYSQL_HOST" "-u$MYSQL_USER" "-p$(cat $MYSQL_PASSWD_FILE)" | bzip2 -cz9 > $BACKUP_FILE &
 # The process is started in background and we wait for its completion. This allow the script to treat a signal
 # immediatly instead of waiting for the end of the command.
 wait $!
 
 ERR_CODE="$?"
-if [ "$ERR_CODE" != 0 ]; then
-    echo "Database backup failed with error code $ERR_CODE"
-else
+if [ $ERR_CODE -eq 0 ]; then
     echo 'Database backup completed.'
+else
+    echo "Database backup failed with error code $ERR_CODE"
 fi
 echo -e '----------------------------------------\n'
+exit $ERR_CODE
