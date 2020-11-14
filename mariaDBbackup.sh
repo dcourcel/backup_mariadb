@@ -42,7 +42,7 @@ if [ -n "$1" ]; then
     BACKUP_FOLDER="$5"
     ARCHIVE_PREFIX="$6"
 else
-    if [ -n "ADD_DROP_DATABASE" ]; then
+    if [ -n "$ADD_DROP_DATABASE" ]; then
         ADD_DROP_DATABASE=--add-drop-database
     fi
 fi
